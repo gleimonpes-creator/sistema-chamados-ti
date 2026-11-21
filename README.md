@@ -97,17 +97,3 @@ git commit -m "feat: versão inicial do sistema de chamados de T.I."
 git branch -M main
 git remote add origin [https://github.com/SEU_USUARIO/sistema-chamados-ti.git](https://github.com/SEU_USUARIO/sistema-chamados-ti.git)
 git push -u origin main
-
----
-
-## 📘 Manual de Utilização
-
-Para o guia passo a passo completo por perfil, consulte o arquivo **[MANUAL.md](MANUAL.md)** na raiz do repositório.
-
-### Resumo Rápido por Perfil
-
-| Perfil | Principais Tarefas no Sistema |
-| :--- | :--- |
-| **Solicitante** | Fazer login, preencher departamento, prioridade e descrição, anexar print/foto do erro, enviar chamado e acompanhar o andamento das próprias solicitações. |
-| **Técnico de T.I.** | Monitorar a fila por período ou busca, priorizar chamados **Críticos** em aberto, inspecionar anexos e atualizar o status (**Em Andamento** / **Concluído**) conforme permissões. |
-| **Administrador Master** | Analisar gráficos e relatórios, gerenciar fila de chamados, cadastrar/renomear/excluir usuários, definir permissões granulares (RBAC) e consultar a trilha de auditoria. |
