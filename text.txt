@@ -1,0 +1,11 @@
+sistema-chamados-ti/
+├── sistema_chamados_ti.html   # Aplicação web completa (PWA-ready, RBAC, Chart.js e alertas)
+├── index.html                 # Versão standalone para abertura de chamados (XAMPP)
+├── login.html                 # Tela de login standalone (XAMPP)
+├── admin.html                 # Painel administrativo standalone (XAMPP)
+├── api.php                    # API REST em PHP/MySQL para ambiente XAMPP
+├── database.sql               # Script SQL de criação do banco e tabela
+├── manifest.json              # Configuração PWA para instalação no Android
+├── sw.js                      # Service Worker para suporte PWA
+├── .gitignore                 # Arquivos ignorados pelo Git (uploads, config local, etc.)
+└── README.md                  # Documentação completa do projeto
