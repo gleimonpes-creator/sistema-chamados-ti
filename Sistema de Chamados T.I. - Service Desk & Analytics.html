@@ -1,0 +1,2425 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>T.I. Service Desk & Analytics</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Animação para chamados críticos em aberto */
+        @keyframes pulse-red {
+            0%, 100% {
+                background-color: #ffffff;
+                box-shadow: inset 4px 0 0 #dc2626;
+            }
+            50% {
+                background-color: #fee2e2;
+                box-shadow: inset 6px 0 0 #dc2626, 0 0 12px rgba(220, 38, 38, 0.18);
+            }
+        }
+
+        .row-critico {
+            animation: pulse-red 1.8s infinite ease-in-out;
+        }
+
+        /* Animação de Toast */
+        @keyframes slideInRight {
+            from { transform: translateX(110%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast-enter {
+            animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Regras de Impressão / Relatório PDF */
+        @media print {
+            body {
+                background: #ffffff !important;
+                color: #000000 !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            .print-container {
+                box-shadow: none !important;
+                border: 1px solid #e2e8f0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            table {
+                font-size: 11px !important;
+            }
+            th, td {
+                padding: 8px !important;
+                border-bottom: 1px solid #cbd5e1 !important;
+            }
+            .row-critico {
+                animation: none !important;
+                background-color: #fff1f2 !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#f4f7fe] text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- Container de Notificações Toast -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none no-print"></div>
+
+    <!-- Cabeçalho Principal (#1e40af) -->
+    <header class="bg-[#1e40af] text-white shadow-lg sticky top-0 z-40 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row items-center justify-between py-3.5 gap-3">
+                <!-- Logo & Título -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-white shadow-inner">
+                        <i class="fa-solid fa-headset text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg sm:text-xl font-bold tracking-tight leading-none">T.I. Service Desk</h1>
+                        <span class="text-xs text-blue-200 font-medium flex items-center gap-1.5 mt-1">
+                            <span id="connection-dot" class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                            <span id="connection-label">Modo Local (Offline-Ready)</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Navegação de Abas + Usuário Logado + Configurações -->
+                <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-center">
+                    <nav id="main-nav" class="hidden bg-blue-950/40 p-1 rounded-xl border border-blue-400/30 flex items-center gap-1">
+                        <button id="tab-user" onclick="switchTab('user')" class="px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 bg-white text-[#1e40af] shadow">
+                            <i class="fa-solid fa-plus-circle"></i>
+                            <span>Abrir Chamado</span>
+                        </button>
+                        <button id="tab-admin" onclick="switchTab('admin')" class="hidden px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 text-blue-100 hover:text-white hover:bg-blue-800/50">
+                            <i class="fa-solid fa-chart-pie"></i>
+                            <span>Painel T.I.</span>
+                        </button>
+                    </nav>
+
+                    <!-- Botão Gestão de Usuários & Permissões (visível conforme permissão) -->
+                    <button id="btn-header-users" onclick="openUsersModal()" class="hidden px-3 py-2 rounded-xl bg-blue-900/80 hover:bg-blue-950 border border-blue-400/30 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span>Usuários & Permissões</span>
+                    </button>
+
+                    <!-- Indicador do Usuário Autenticado -->
+                    <div id="header-user-pill" class="hidden items-center gap-2 bg-blue-950/50 border border-blue-400/30 px-3 py-1.5 rounded-xl text-xs">
+                        <i class="fa-solid fa-user-check text-emerald-300"></i>
+                        <span id="header-user-name" class="font-semibold text-white max-w-[120px] truncate"></span>
+                        <span id="header-user-role" class="px-1.5 py-0.5 rounded bg-blue-800 text-[10px] uppercase font-bold text-blue-100"></span>
+                        <button onclick="logoutSystem()" title="Sair da conta" class="ml-1 px-2 py-0.5 rounded bg-[#dc2626] hover:bg-red-700 text-white font-semibold transition">
+                            Sair
+                        </button>
+                    </div>
+
+                    <button onclick="openConfigModal()" title="Configurar API PHP / XAMPP" class="p-2.5 rounded-xl bg-blue-900/60 hover:bg-blue-950 border border-blue-400/30 text-blue-100 transition-colors">
+                        <i class="fa-solid fa-server"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Cabeçalho Exclusivo de Impressão -->
+    <div class="hidden print-only p-6 border-b-2 border-slate-800 mb-6">
+        <div class="flex justify-between items-end">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">Relatório Gerencial de Chamados — T.I.</h1>
+                <p class="text-sm text-slate-600">Service Desk & Suporte Técnico Corporativo</p>
+            </div>
+            <div class="text-right text-xs text-slate-600">
+                <p>Emitido em: <span id="print-date" class="font-semibold"></span></p>
+                <p>Filtro aplicado: <span id="print-filter" class="font-semibold uppercase">Todos</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+
+        <!-- =========================================================
+             TELA DE LOGIN OBRIGATÓRIA (PARA TODOS OS USUÁRIOS)
+             ========================================================= -->
+        <section id="view-login" class="max-w-md mx-auto py-6 no-print">
+            <div class="bg-white rounded-2xl shadow-lg border border-slate-200/80 p-8">
+                <div class="text-center mb-6">
+                    <div class="w-14 h-14 rounded-2xl bg-blue-100 text-[#1e40af] flex items-center justify-center mx-auto mb-3 text-2xl shadow-inner">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800">Acesso ao Sistema T.I.</h2>
+                    <p class="text-sm text-slate-500 mt-1">Faça login para abrir chamados ou administrar o suporte técnico</p>
+                </div>
+
+                <div id="login-error" class="hidden mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation text-sm"></i>
+                    <span id="login-error-text">Usuário ou senha inválidos.</span>
+                </div>
+
+                <form id="login-form" class="space-y-4">
+                    <div>
+                        <label for="login-user" class="block text-sm font-semibold text-slate-700 mb-1">Usuário</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                <i class="fa-solid fa-user"></i>
+                            </span>
+                            <input type="text" id="login-user" required autocomplete="off" placeholder="Digite seu login"
+                                class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="login-pass" class="block text-sm font-semibold text-slate-700 mb-1">Senha</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                <i class="fa-solid fa-lock"></i>
+                            </span>
+                            <input type="password" id="login-pass" required placeholder="••••••"
+                                class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full py-3 bg-[#1e40af] hover:bg-blue-900 text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-right-to-bracket"></i>
+                        <span>Entrar no Sistema</span>
+                    </button>
+                </form>
+
+                <!-- Atalhos de preenchimento rápido para demonstração -->
+                <div class="mt-6 pt-4 border-t border-slate-100">
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center mb-2.5">Acesso Rápido (Contas de Teste)</p>
+                    <div class="grid grid-cols-1 gap-2 text-xs">
+                        <button type="button" onclick="quickFillLogin('admin', 'ti123')" class="w-full px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-900 flex items-center justify-between transition">
+                            <span><i class="fa-solid fa-crown mr-1.5 text-purple-600"></i><strong>Administrador Master</strong></span>
+                            <span class="font-mono text-[11px]">admin / ti123</span>
+                        </button>
+                        <button type="button" onclick="quickFillLogin('tecnico1', '1234')" class="w-full px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 flex items-center justify-between transition">
+                            <span><i class="fa-solid fa-screwdriver-wrench mr-1.5 text-blue-600"></i><strong>Técnico T.I.</strong></span>
+                            <span class="font-mono text-[11px]">tecnico1 / 1234</span>
+                        </button>
+                        <button type="button" onclick="quickFillLogin('maria', '1234')" class="w-full px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 flex items-center justify-between transition">
+                            <span><i class="fa-solid fa-user mr-1.5 text-emerald-600"></i><strong>Solicitante</strong></span>
+                            <span class="font-mono text-[11px]">maria / 1234</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =========================================================
+             ABA 1: ÁREA DO SOLICITANTE (USUÁRIO AUTENTICADO)
+             ========================================================= -->
+        <section id="view-user" class="hidden max-w-3xl mx-auto space-y-6 no-print">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="bg-gradient-to-r from-slate-50 to-blue-50/60 px-6 py-5 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2.5">
+                            <i class="fa-solid fa-ticket text-[#1e40af]"></i>
+                            Nova Solicitação de Suporte
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-1">Preencha os detalhes abaixo para que nossa equipe técnica atenda sua ocorrência.</p>
+                    </div>
+                    <span id="user-session-badge" class="text-xs font-semibold text-[#1e40af] bg-blue-100/80 px-3 py-1.5 rounded-xl self-start sm:self-center"></span>
+                </div>
+
+                <form id="ticket-form" class="p-6 space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="solicitante" class="block text-sm font-semibold text-slate-700 mb-1.5">Seu Nome Completo *</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                    <i class="fa-regular fa-user"></i>
+                                </span>
+                                <input type="text" id="solicitante" required readonly
+                                    class="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-sm text-slate-700 font-medium cursor-not-allowed">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="departamento" class="block text-sm font-semibold text-slate-700 mb-1.5">Departamento *</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                    <i class="fa-regular fa-building"></i>
+                                </span>
+                                <select id="departamento" required
+                                    class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition">
+                                    <option value="Financeiro">Financeiro</option>
+                                    <option value="RH">RH (Recursos Humanos)</option>
+                                    <option value="Vendas">Vendas / Comercial</option>
+                                    <option value="Operacional">Operacional / Logística</option>
+                                    <option value="Administrativo">Administrativo</option>
+                                    <option value="T.I.">T.I. (Tecnologia da Informação)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="tipo" class="block text-sm font-semibold text-slate-700 mb-1.5">Tipo de Problema *</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                    <i class="fa-solid fa-laptop-medical"></i>
+                                </span>
+                                <select id="tipo" required
+                                    class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition">
+                                    <option value="Hardware (PC, Monitor, Periféricos)">Hardware (PC, Monitor, Periféricos)</option>
+                                    <option value="Software / ERP / Office">Software / ERP / Office</option>
+                                    <option value="Rede, Wi-Fi e Internet">Rede, Wi-Fi e Internet</option>
+                                    <option value="Impressora / Scanner">Impressora / Scanner</option>
+                                    <option value="Acesso, Senha e E-mail">Acesso, Senha e E-mail</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="prioridade" class="block text-sm font-semibold text-slate-700 mb-1.5">Nível de Prioridade *</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                                    <i class="fa-solid fa-gauge-high"></i>
+                                </span>
+                                <select id="prioridade" required
+                                    class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition">
+                                    <option value="Normal">🟢 Normal (Atendimento padrão)</option>
+                                    <option value="Alta">🟡 Alta (Impacta produtividade)</option>
+                                    <option value="Critico">🔴 Crítico (Setor parado / Urgente)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="descricao" class="block text-sm font-semibold text-slate-700 mb-1.5">Descrição Detalhada *</label>
+                        <textarea id="descricao" rows="4" required placeholder="Descreva o erro apresentado, mensagens na tela ou equipamento afetado..."
+                            class="w-full p-3.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"></textarea>
+                    </div>
+
+                    <!-- Upload de Imagem com Preview -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">Anexar Print ou Foto do Erro (Opcional)</label>
+                        <div id="dropzone" class="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-4 text-center bg-slate-50/70 transition cursor-pointer relative">
+                            <input type="file" id="foto-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                            <div id="upload-placeholder" class="py-2">
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl text-[#1e40af] mb-1"></i>
+                                <p class="text-sm font-medium text-slate-700">Clique para selecionar ou arraste uma imagem</p>
+                                <p class="text-xs text-slate-400 mt-0.5">PNG, JPG ou WEBP (otimizado automaticamente)</p>
+                            </div>
+                            <div id="preview-wrapper" class="hidden flex items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-slate-200 relative z-10">
+                                <div class="flex items-center gap-3 overflow-hidden">
+                                    <img id="foto-preview" src="" alt="Pré-visualização" class="w-14 h-14 object-cover rounded-lg border border-slate-200 shrink-0">
+                                    <div class="text-left overflow-hidden">
+                                        <p id="foto-nome" class="text-xs font-semibold text-slate-700 truncate">imagem.png</p>
+                                        <p class="text-[11px] text-emerald-600 font-medium"><i class="fa-solid fa-check-circle"></i> Imagem pronta para envio</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="clearImageSelection()" class="px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition">
+                                    <i class="fa-solid fa-trash-can"></i> Remover
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botão Verde (#16a34a) preservado -->
+                    <button type="submit" id="btn-submit-ticket" class="w-full py-3.5 px-6 bg-[#16a34a] hover:bg-green-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm sm:text-base">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Enviar Solicitação de Chamado</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Meus Chamados (Exclusivo do usuário logado) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="px-6 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-[#1e40af]"></i>
+                        Meus Chamados Registrados
+                    </h3>
+                    <span id="my-tickets-count" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-[#1e40af]">0</span>
+                </div>
+                <div id="my-tickets-list" class="divide-y divide-slate-100"></div>
+                <div id="my-tickets-empty" class="py-8 text-center text-slate-400 text-xs">
+                    Você ainda não possui chamados registrados nesta conta.
+                </div>
+            </div>
+        </section>
+
+        <!-- =========================================================
+             ABA 2: PAINEL ADMINISTRATIVO & ANALYTICS (ADMIN & TÉCNICOS)
+             ========================================================= -->
+        <section id="view-admin" class="hidden space-y-6">
+
+            <!-- Barra Superior do Painel -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:px-6 rounded-2xl shadow-sm border border-slate-200/80 no-print">
+                <div>
+                    <h2 class="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line text-[#1e40af]"></i>
+                        Central de Comando & Analytics
+                    </h2>
+                    <p class="text-xs text-slate-500">Monitoramento em tempo real dos chamados corporativos</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-panel-users" onclick="openUsersModal()" class="hidden px-3.5 py-2 rounded-xl bg-[#1e40af] hover:bg-blue-900 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span>Usuários & Permissões</span>
+                    </button>
+                    <button onclick="simulateIncomingTicket()" class="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold transition flex items-center gap-1.5" title="Testar alerta visual e sonoro de novo chamado">
+                        <i class="fa-solid fa-bell"></i>
+                        <span>Simular Alerta</span>
+                    </button>
+                    <button onclick="printReport()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Imprimir Relatório</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cards de KPI -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-500 uppercase">Total Filtrado</span>
+                        <span class="w-8 h-8 rounded-lg bg-blue-50 text-[#1e40af] flex items-center justify-center"><i class="fa-solid fa-layer-group"></i></span>
+                    </div>
+                    <p id="kpi-total" class="text-2xl font-extrabold text-slate-800 mt-2">0</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-500 uppercase">Em Aberto</span>
+                        <span class="w-8 h-8 rounded-lg bg-red-50 text-[#dc2626] flex items-center justify-center"><i class="fa-solid fa-circle-exclamation"></i></span>
+                    </div>
+                    <p id="kpi-aberto" class="text-2xl font-extrabold text-[#dc2626] mt-2">0</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-500 uppercase">Em Andamento</span>
+                        <span class="w-8 h-8 rounded-lg bg-amber-50 text-[#ca8a04] flex items-center justify-center"><i class="fa-solid fa-spinner"></i></span>
+                    </div>
+                    <p id="kpi-andamento" class="text-2xl font-extrabold text-[#ca8a04] mt-2">0</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-500 uppercase">Concluídos</span>
+                        <span class="w-8 h-8 rounded-lg bg-emerald-50 text-[#16a34a] flex items-center justify-center"><i class="fa-solid fa-circle-check"></i></span>
+                    </div>
+                    <p id="kpi-concluido" class="text-2xl font-extrabold text-[#16a34a] mt-2">0</p>
+                </div>
+            </div>
+
+            <!-- Gráficos Chart.js (Preservados) -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-[#1e40af]"></i>
+                        Status dos Chamados
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chart-status"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-column text-[#1e40af]"></i>
+                        Demandas por Departamento
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chart-depto"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela de Gestão de Chamados -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden print-container">
+                <!-- Barra de Filtros & Busca -->
+                <div class="p-4 sm:px-6 bg-slate-50/80 border-b border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 no-print">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-xs font-bold text-slate-500 mr-1"><i class="fa-solid fa-filter"></i> Período:</span>
+                        <button onclick="setPeriodFilter('dia')" data-period="dia" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition">Hoje</button>
+                        <button onclick="setPeriodFilter('semana')" data-period="semana" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition">7 Dias</button>
+                        <button onclick="setPeriodFilter('mes')" data-period="mes" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition">30 Dias</button>
+                        <button onclick="setPeriodFilter('todos')" data-period="todos" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1e40af] text-white shadow-sm transition">Todos</button>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                        <select id="tech-filter" onchange="renderAdminDashboard()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                            <option value="todos">Todos os Técnicos</option>
+                            <option value="meus">Atendidos por Mim</option>
+                            <option value="sem_tecnico">Sem Técnico Atribuído</option>
+                        </select>
+
+                        <div class="relative w-full sm:w-64">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 text-xs">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </span>
+                            <input type="text" id="search-input" oninput="renderAdminDashboard()" placeholder="Buscar solicitante, técnico ou problema..."
+                                class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela Responsiva -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                <th class="py-3.5 px-4">ID / Data</th>
+                                <th class="py-3.5 px-4 no-print">Anexo</th>
+                                <th class="py-3.5 px-4">Solicitante / Setor</th>
+                                <th class="py-3.5 px-4">Ocorrência & Prioridade</th>
+                                <th class="py-3.5 px-4">Status / Responsável</th>
+                                <th class="py-3.5 px-4 text-right no-print">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tickets-tbody" class="divide-y divide-slate-100 text-sm">
+                            <!-- Linhas geradas dinamicamente via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="empty-state" class="hidden py-12 text-center text-slate-400">
+                    <i class="fa-regular fa-folder-open text-4xl mb-2"></i>
+                    <p class="text-sm font-medium">Nenhum chamado encontrado para o filtro selecionado.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- =========================================================
+         MODAL: EDIÇÃO / RENOMEAÇÃO DE CHAMADO (PERMISSÃO: editar_chamados)
+         ========================================================= -->
+    <div id="edit-ticket-modal" onclick="closeEditTicketModal()" class="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div onclick="event.stopPropagation()" class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-[#1e40af]"></i>
+                    Editar / Renomear Chamado <span id="edit-ticket-id-label" class="font-mono text-[#1e40af]"></span>
+                </h3>
+                <button onclick="closeEditTicketModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="edit-ticket-form" class="space-y-4">
+                <input type="hidden" id="edit-ticket-id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Nome do Solicitante</label>
+                        <input type="text" id="edit-ticket-nome" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Departamento</label>
+                        <select id="edit-ticket-depto" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                            <option value="Financeiro">Financeiro</option>
+                            <option value="RH">RH</option>
+                            <option value="Vendas">Vendas</option>
+                            <option value="Operacional">Operacional</option>
+                            <option value="Administrativo">Administrativo</option>
+                            <option value="T.I.">T.I.</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Tipo / Título do Problema</label>
+                        <input type="text" id="edit-ticket-tipo" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Prioridade</label>
+                        <select id="edit-ticket-prio" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                            <option value="Normal">Normal</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Critico">Crítico</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Descrição Detalhada</label>
+                    <textarea id="edit-ticket-desc" rows="3" required class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"></textarea>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeEditTicketModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 text-xs font-bold text-white bg-[#1e40af] hover:bg-blue-900 rounded-xl shadow">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         MODAL: GESTÃO DE USUÁRIOS, TÉCNICOS E PERMISSÕES (RBAC)
+         ========================================================= -->
+    <div id="users-modal" onclick="closeUsersModal()" class="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div onclick="event.stopPropagation()" class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200">
+            <!-- Cabeçalho Modal -->
+            <div class="px-6 py-4 bg-[#1e40af] text-white flex items-center justify-between shrink-0">
+                <div>
+                    <h3 class="text-base sm:text-lg font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-users-gear text-blue-200"></i>
+                        Gestão de Usuários, Técnicos & Permissões T.I.
+                    </h3>
+                    <p class="text-xs text-blue-200">Cadastre solicitantes, técnicos e administradores e defina as permissões de cada função</p>
+                </div>
+                <button onclick="closeUsersModal()" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Corpo Modal -->
+            <div class="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Formulário de Cadastro / Edição de Usuário -->
+                <div class="lg:col-span-5 bg-slate-50 p-5 rounded-2xl border border-slate-200/80 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h4 id="user-form-title" class="text-sm font-bold text-slate-800">Cadastrar Novo Usuário</h4>
+                        <button type="button" id="btn-cancel-user-edit" onclick="resetUserForm()" class="hidden text-xs font-semibold text-[#1e40af] hover:underline">
+                            + Novo Cadastro
+                        </button>
+                    </div>
+
+                    <form id="user-crud-form" class="space-y-3">
+                        <input type="hidden" id="edit-user-id">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nome Completo *</label>
+                            <input type="text" id="crud-user-nome" required placeholder="Ex: João Silva"
+                                class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Login (Usuário) *</label>
+                                <input type="text" id="crud-user-login" required placeholder="joao.ti"
+                                    class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Senha *</label>
+                                <input type="text" id="crud-user-senha" required placeholder="Senha"
+                                    class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Departamento *</label>
+                                <select id="crud-user-depto" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                                    <option value="T.I.">T.I.</option>
+                                    <option value="Financeiro">Financeiro</option>
+                                    <option value="RH">RH</option>
+                                    <option value="Vendas">Vendas</option>
+                                    <option value="Operacional">Operacional</option>
+                                    <option value="Administrativo">Administrativo</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Perfil de Acesso *</label>
+                                <select id="crud-user-perfil" onchange="onUserRoleSelectChange()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-600">
+                                    <option value="Solicitante">Solicitante (Usuário)</option>
+                                    <option value="Tecnico">Técnico T.I.</option>
+                                    <option value="Admin">Administrador</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Permissões Granulares (Configurável pelo Admin para Técnicos) -->
+                        <div id="permissions-box" class="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-700">Permissões das Funções T.I.</span>
+                                <span id="perm-hint" class="text-[10px] text-slate-400">Definidas pelo Admin</span>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-atender" class="rounded text-blue-600">
+                                    <span>Atender / Concluir chamados</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-editar" class="rounded text-blue-600">
+                                    <span>Editar / Renomear chamado</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-excluir" class="rounded text-blue-600">
+                                    <span>Excluir chamados</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-cad-usuario" class="rounded text-blue-600">
+                                    <span>Cadastrar usuário</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-cad-tecnico" class="rounded text-blue-600">
+                                    <span>Cadastrar técnicos</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-cad-admin" class="rounded text-blue-600">
+                                    <span>Cadastrar administrador</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-gerenciar-perm" class="rounded text-blue-600">
+                                    <span>Gerenciar permissões / renomear</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="perm-auditoria" class="rounded text-blue-600">
+                                    <span>Ver auditoria</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer pt-1">
+                            <input type="checkbox" id="crud-user-ativo" checked class="rounded text-emerald-600">
+                            <span>Conta ativa no sistema</span>
+                        </label>
+
+                        <button type="submit" class="w-full py-2.5 bg-[#16a34a] hover:bg-green-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span id="btn-save-user-label">Salvar Usuário</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Lista de Usuários + Trilha de Auditoria -->
+                <div class="lg:col-span-7 flex flex-col gap-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-600">Contas Cadastradas</h4>
+                            <span id="users-total-badge" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-[#1e40af]">0</span>
+                        </div>
+                        <div class="overflow-x-auto max-h-72">
+                            <table class="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr class="bg-slate-50/70 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
+                                        <th class="py-2.5 px-3">Nome / Login</th>
+                                        <th class="py-2.5 px-3">Perfil / Setor</th>
+                                        <th class="py-2.5 px-3">Status</th>
+                                        <th class="py-2.5 px-3 text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="users-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Trilha de Auditoria Interna -->
+                    <div id="audit-section" class="bg-slate-50 rounded-2xl border border-slate-200 p-3.5">
+                        <h4 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                            <i class="fa-solid fa-list-check text-[#1e40af]"></i>
+                            Trilha de Auditoria (Permissões, Cadastros & Atendimentos)
+                        </h4>
+                        <div id="audit-log-list" class="max-h-32 overflow-y-auto space-y-1.5 text-[11px] text-slate-600 font-mono"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         MODAL: VISUALIZAÇÃO AMPLIADA DE IMAGEM
+         ========================================================= -->
+    <div id="image-modal" onclick="closeImageModal()" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div onclick="event.stopPropagation()" class="bg-white rounded-2xl max-w-3xl w-full overflow-hidden shadow-2xl">
+            <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+                <h3 id="modal-img-title" class="text-sm font-bold text-slate-800">Anexo do Chamado</h3>
+                <button onclick="closeImageModal()" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 bg-slate-950 flex items-center justify-center max-h-[75vh] overflow-auto">
+                <img id="modal-img-src" src="" alt="Anexo Ampliado" class="max-w-full max-h-[68vh] rounded-lg object-contain">
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         MODAL: CONFIGURAÇÃO DA API PHP / MYSQL (XAMPP)
+         ========================================================= -->
+    <div id="config-modal" onclick="closeConfigModal()" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div onclick="event.stopPropagation()" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-database text-[#1e40af]"></i>
+                    Fonte de Dados (Backend)
+                </h3>
+                <button onclick="closeConfigModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-500 mb-4 leading-relaxed">
+                Por padrão, o aplicativo funciona de forma autônoma no navegador (<code class="bg-slate-100 px-1 rounded">localStorage</code>). Caso esteja rodando seu servidor <strong>XAMPP (Apache + MySQL)</strong>, informe abaixo a URL do seu arquivo <code class="bg-slate-100 px-1 rounded">api.php</code>.
+            </p>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">URL do Endpoint PHP (Deixe vazio para Modo Local)</label>
+                    <input type="url" id="api-url-input" placeholder="Ex: http://localhost/suporte/api.php"
+                        class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+                </div>
+
+                <div class="flex items-center justify-between pt-3 gap-2">
+                    <button type="button" onclick="resetDemoData()" class="px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition">
+                        Restaurar Dados Demo
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="closeConfigModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="saveApiConfig()" class="px-4 py-2 text-xs font-semibold text-white bg-[#1e40af] hover:bg-blue-900 rounded-xl shadow transition">
+                            Salvar Configuração
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =====================================================================
+           CONFIGURAÇÃO PWA DINÂMICA (MANIFEST)
+           ===================================================================== */
+        (function setupPWA() {
+            try {
+                const manifest = {
+                    name: "T.I. Service Desk & Analytics",
+                    short_name: "T.I. Suporte",
+                    start_url: window.location.href,
+                    display: "standalone",
+                    background_color: "#f4f7fe",
+                    theme_color: "#1e40af",
+                    icons: [{
+                        src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231e40af'/><text x='50' y='66' font-size='52' text-anchor='middle' fill='white'>🖥️</text></svg>",
+                        sizes: "192x192",
+                        type: "image/svg+xml"
+                    }]
+                };
+                const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+                const link = document.createElement('link');
+                link.rel = 'manifest';
+                link.href = URL.createObjectURL(blob);
+                document.head.appendChild(link);
+            } catch (e) {
+                console.warn("PWA manifest dinâmico indisponível neste contexto:", e);
+            }
+        })();
+
+        /* =====================================================================
+           ESTADO DA APLICAÇÃO, RBAC, PERSISTÊNCIA E AUDITORIA
+           ===================================================================== */
+        const STORAGE_KEY = 'ti_service_desk_tickets_v2';
+        const USERS_STORAGE_KEY = 'ti_service_desk_users_v2';
+        const AUDIT_STORAGE_KEY = 'ti_service_desk_audit_v2';
+        const API_CONFIG_KEY = 'ti_service_desk_api_url';
+        const AUTH_SESSION_KEY = 'ti_current_user_session_v2';
+
+        let currentTab = 'user';
+        let currentPeriod = 'todos';
+        let selectedImageBase64 = null;
+        let chartStatusInstance = null;
+        let chartDeptoInstance = null;
+        let knownTicketCount = 0;
+
+        const FULL_PERMISSIONS = {
+            atender_chamados: true,
+            excluir_chamados: true,
+            editar_chamados: true,
+            cadastrar_usuario: true,
+            cadastrar_tecnico: true,
+            cadastrar_admin: true,
+            gerenciar_permissoes: true,
+            ver_auditoria: true
+        };
+
+        const DEFAULT_TECH_PERMISSIONS = {
+            atender_chamados: true,
+            excluir_chamados: false,
+            editar_chamados: false,
+            cadastrar_usuario: false,
+            cadastrar_tecnico: false,
+            cadastrar_admin: false,
+            gerenciar_permissoes: false,
+            ver_auditoria: false
+        };
+
+        const NO_PERMISSIONS = {
+            atender_chamados: false,
+            excluir_chamados: false,
+            editar_chamados: false,
+            cadastrar_usuario: false,
+            cadastrar_tecnico: false,
+            cadastrar_admin: false,
+            gerenciar_permissoes: false,
+            ver_auditoria: false
+        };
+
+        // Contas iniciais pré-cadastradas (seed)
+        function getDefaultUsers() {
+            return [
+                {
+                    id: 1,
+                    nome: "Administrador Master",
+                    usuario: "admin",
+                    senha: "ti123",
+                    departamento: "T.I.",
+                    perfil: "Admin",
+                    isMaster: true,
+                    ativo: true,
+                    permissoes: { ...FULL_PERMISSIONS }
+                },
+                {
+                    id: 2,
+                    nome: "Técnico T.I. 01",
+                    usuario: "tecnico1",
+                    senha: "1234",
+                    departamento: "T.I.",
+                    perfil: "Tecnico",
+                    isMaster: false,
+                    ativo: true,
+                    permissoes: { ...DEFAULT_TECH_PERMISSIONS }
+                },
+                {
+                    id: 3,
+                    nome: "Maria Souza",
+                    usuario: "maria",
+                    senha: "1234",
+                    departamento: "Financeiro",
+                    perfil: "Solicitante",
+                    isMaster: false,
+                    ativo: true,
+                    permissoes: { ...NO_PERMISSIONS }
+                }
+            ];
+        }
+
+        function loadUsers() {
+            try {
+                const raw = localStorage.getItem(USERS_STORAGE_KEY);
+                if (!raw) {
+                    const seed = getDefaultUsers();
+                    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(seed));
+                    return seed;
+                }
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) && parsed.length ? parsed : getDefaultUsers();
+            } catch (e) {
+                return getDefaultUsers();
+            }
+        }
+
+        function saveUsers(users) {
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+        }
+
+        function logAudit(actionText) {
+            try {
+                const currentUser = getCurrentUser();
+                const actor = currentUser ? `${currentUser.nome} (@${currentUser.usuario})` : 'Sistema';
+                const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
+                const logs = raw ? JSON.parse(raw) : [];
+                logs.unshift({
+                    timestamp: new Date().toLocaleString('pt-BR'),
+                    actor,
+                    action: actionText
+                });
+                localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(logs.slice(0, 80)));
+            } catch (e) {
+                console.warn('Falha ao gravar auditoria:', e);
+            }
+        }
+
+        function getCurrentUser() {
+            try {
+                const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+                if (!raw) return null;
+                const sessionUser = JSON.parse(raw);
+                const freshUser = loadUsers().find(u => Number(u.id) === Number(sessionUser.id));
+                if (!freshUser || !freshUser.ativo) {
+                    sessionStorage.removeItem(AUTH_SESSION_KEY);
+                    return null;
+                }
+                return freshUser;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function isAuthenticated() {
+            return getCurrentUser() !== null;
+        }
+
+        function hasPermission(permKey) {
+            const user = getCurrentUser();
+            if (!user) return false;
+            if (user.isMaster || user.perfil === 'Admin') return true;
+            return Boolean(user.permissoes && user.permissoes[permKey]);
+        }
+
+        function canOpenUserManagement() {
+            const user = getCurrentUser();
+            if (!user) return false;
+            if (user.isMaster || user.perfil === 'Admin') return true;
+            return (
+                hasPermission('cadastrar_usuario') ||
+                hasPermission('cadastrar_tecnico') ||
+                hasPermission('cadastrar_admin') ||
+                hasPermission('gerenciar_permissoes') ||
+                hasPermission('ver_auditoria')
+            );
+        }
+
+        // Dados iniciais realistas de chamados
+        function getDefaultTickets() {
+            const now = Date.now();
+            const hour = 3600 * 1000;
+            const day = 24 * hour;
+
+            return [
+                {
+                    id: 1005,
+                    usuario_id: 3,
+                    nome_solicitante: "Maria Souza",
+                    departamento: "Financeiro",
+                    tipo_problema: "Software / ERP / Office",
+                    prioridade: "Critico",
+                    descricao: "Sistema ERP travando na emissão de notas fiscais eletrônicas. Setor inteiro parado.",
+                    status: "Aberto",
+                    tecnico_responsavel: null,
+                    tecnico_id: null,
+                    imagem: createSampleErrorSvg("ERRO 503 - Falha na conexão com servidor SEFAZ"),
+                    data_abertura: new Date(now - 25 * 60 * 1000).toISOString()
+                },
+                {
+                    id: 1004,
+                    usuario_id: 3,
+                    nome_solicitante: "Maria Souza",
+                    departamento: "Financeiro",
+                    tipo_problema: "Rede, Wi-Fi e Internet",
+                    prioridade: "Alta",
+                    descricao: "Oscilação constante na rede Wi-Fi da sala de reuniões financeiras.",
+                    status: "Em Andamento",
+                    tecnico_responsavel: "Técnico T.I. 01",
+                    tecnico_id: 2,
+                    imagem: null,
+                    data_abertura: new Date(now - 3 * hour).toISOString()
+                },
+                {
+                    id: 1003,
+                    usuario_id: 1,
+                    nome_solicitante: "Administrador Master",
+                    departamento: "RH",
+                    tipo_problema: "Impressora / Scanner",
+                    prioridade: "Normal",
+                    descricao: "Impressora multifuncional do 2º andar apresentando atolamento de papel.",
+                    status: "Concluído",
+                    tecnico_responsavel: "Técnico T.I. 01",
+                    tecnico_id: 2,
+                    imagem: null,
+                    data_abertura: new Date(now - 2 * day).toISOString()
+                },
+                {
+                    id: 1002,
+                    usuario_id: 1,
+                    nome_solicitante: "Administrador Master",
+                    departamento: "Operacional",
+                    tipo_problema: "Hardware (PC, Monitor, Periféricos)",
+                    prioridade: "Alta",
+                    descricao: "Leitor de código de barras da bancada 04 não reconhece na porta USB.",
+                    status: "Aberto",
+                    tecnico_responsavel: null,
+                    tecnico_id: null,
+                    imagem: null,
+                    data_abertura: new Date(now - 4 * day).toISOString()
+                },
+                {
+                    id: 1001,
+                    usuario_id: 1,
+                    nome_solicitante: "Administrador Master",
+                    departamento: "Administrativo",
+                    tipo_problema: "Acesso, Senha e E-mail",
+                    prioridade: "Normal",
+                    descricao: "Solicitação de criação de e-mail corporativo para nova colaboradora.",
+                    status: "Concluído",
+                    tecnico_responsavel: "Administrador Master",
+                    tecnico_id: 1,
+                    imagem: null,
+                    data_abertura: new Date(now - 12 * day).toISOString()
+                }
+            ];
+        }
+
+        function createSampleErrorSvg(msg) {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260">
+                <rect width="480" height="260" fill="#1e293b"/>
+                <rect x="20" y="20" width="440" height="32" rx="6" fill="#dc2626"/>
+                <text x="35" y="41" font-family="sans-serif" font-size="13" font-weight="bold" fill="white">⚠️ ALERTA DO SISTEMA CORPORATIVO</text>
+                <rect x="20" y="65" width="440" height="175" rx="6" fill="#0f172a"/>
+                <text x="35" y="105" font-family="monospace" font-size="13" fill="#f87171">${msg}</text>
+                <text x="35" y="135" font-family="monospace" font-size="11" fill="#94a3b8">Timestamp: ${new Date().toLocaleTimeString('pt-BR')}</text>
+                <text x="35" y="160" font-family="monospace" font-size="11" fill="#94a3b8">Host: ESTACAO-FIN-04 | Módulo: NFe_Gateway</text>
+            </svg>`;
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        }
+
+        function getApiUrl() {
+            return (localStorage.getItem(API_CONFIG_KEY) || '').trim();
+        }
+
+        function updateConnectionBadge() {
+            const apiUrl = getApiUrl();
+            const dot = document.getElementById('connection-dot');
+            const label = document.getElementById('connection-label');
+            if (apiUrl) {
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block';
+                label.textContent = 'Conectado à API PHP/MySQL';
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
+                label.textContent = 'Modo Local (Offline-Ready)';
+            }
+        }
+
+        function loadLocalTickets() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) {
+                    const defaults = getDefaultTickets();
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+                    return defaults;
+                }
+                return JSON.parse(raw);
+            } catch (e) {
+                return getDefaultTickets();
+            }
+        }
+
+        function saveLocalTickets(tickets) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tickets));
+        }
+
+        async function fetchAllTickets() {
+            const apiUrl = getApiUrl();
+            if (apiUrl) {
+                try {
+                    const response = await fetch(`${apiUrl}?acao=listar&periodo=todos`);
+                    if (!response.ok) throw new Error('Erro HTTP');
+                    const data = await response.json();
+                    return Array.isArray(data) ? data : [];
+                } catch (err) {
+                    showToast('Falha ao conectar com a API PHP. Exibindo dados locais.', 'warning');
+                    return loadLocalTickets();
+                }
+            }
+            return loadLocalTickets();
+        }
+
+        /* =====================================================================
+           LOGIN, NAVEGAÇÃO ENTRE ABAS & ATUALIZAÇÃO DA UI POR PERFIL
+           ===================================================================== */
+        function quickFillLogin(user, pass) {
+            document.getElementById('login-user').value = user;
+            document.getElementById('login-pass').value = pass;
+            document.getElementById('login-form').dispatchEvent(new Event('submit', { cancelable: true }));
+        }
+
+        function updateSessionUI() {
+            const user = getCurrentUser();
+            const nav = document.getElementById('main-nav');
+            const tabAdmin = document.getElementById('tab-admin');
+            const btnHeaderUsers = document.getElementById('btn-header-users');
+            const btnPanelUsers = document.getElementById('btn-panel-users');
+            const pill = document.getElementById('header-user-pill');
+            const nameEl = document.getElementById('header-user-name');
+            const roleEl = document.getElementById('header-user-role');
+
+            if (!user) {
+                nav.classList.add('hidden');
+                pill.classList.add('hidden');
+                pill.classList.remove('flex');
+                btnHeaderUsers.classList.add('hidden');
+                btnPanelUsers.classList.add('hidden');
+                return;
+            }
+
+            nav.classList.remove('hidden');
+            pill.classList.remove('hidden');
+            pill.classList.add('flex');
+            nameEl.textContent = user.nome;
+
+            const roleDisplay = {
+                Admin: user.isMaster ? 'Admin Master' : 'Administrador',
+                Tecnico: 'Técnico T.I.',
+                Solicitante: 'Solicitante'
+            };
+            roleEl.textContent = roleDisplay[user.perfil] || user.perfil;
+
+            if (user.perfil === 'Solicitante') {
+                tabAdmin.classList.add('hidden');
+            } else {
+                tabAdmin.classList.remove('hidden');
+            }
+
+            if (canOpenUserManagement()) {
+                btnHeaderUsers.classList.remove('hidden');
+                btnPanelUsers.classList.remove('hidden');
+            } else {
+                btnHeaderUsers.classList.add('hidden');
+                btnPanelUsers.classList.add('hidden');
+            }
+        }
+
+        function prefillUserTicketForm() {
+            const user = getCurrentUser();
+            if (!user) return;
+            const nomeInput = document.getElementById('solicitante');
+            const deptoSelect = document.getElementById('departamento');
+            const badge = document.getElementById('user-session-badge');
+
+            nomeInput.value = user.nome;
+            if ([...deptoSelect.options].some(o => o.value === user.departamento)) {
+                deptoSelect.value = user.departamento;
+            }
+            badge.innerHTML = `<i class="fa-solid fa-id-badge mr-1"></i> Logado como: ${escapeHtml(user.nome)} (${escapeHtml(user.departamento)})`;
+        }
+
+        async function renderMyTicketsList() {
+            const user = getCurrentUser();
+            const listEl = document.getElementById('my-tickets-list');
+            const emptyEl = document.getElementById('my-tickets-empty');
+            const countEl = document.getElementById('my-tickets-count');
+            if (!user) return;
+
+            const allTickets = await fetchAllTickets();
+            const myTickets = allTickets.filter(t =>
+                Number(t.usuario_id) === Number(user.id) ||
+                (t.nome_solicitante || '').toLowerCase() === user.nome.toLowerCase()
+            );
+
+            countEl.textContent = myTickets.length;
+            listEl.innerHTML = '';
+
+            if (myTickets.length === 0) {
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+            emptyEl.classList.add('hidden');
+
+            myTickets.forEach(t => {
+                const techInfo = t.tecnico_responsavel
+                    ? `<span class="text-[11px] text-[#1e40af] font-semibold"><i class="fa-solid fa-user-gear mr-1"></i>Atendido por: ${escapeHtml(t.tecnico_responsavel)}</span>`
+                    : `<span class="text-[11px] text-slate-400 italic">Aguardando atribuição técnica</span>`;
+
+                const item = document.createElement('div');
+                item.className = 'p-4 hover:bg-slate-50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+                item.innerHTML = `
+                    <div class="space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-mono text-xs font-bold text-slate-700">#${t.id}</span>
+                            ${getPriorityBadge(t.prioridade)}
+                            <span class="text-xs font-bold text-slate-800">${escapeHtml(t.tipo_problema)}</span>
+                            <span class="text-[11px] text-slate-400">• ${formatDateBR(t.data_abertura)}</span>
+                        </div>
+                        <p class="text-xs text-slate-600">${escapeHtml(t.descricao)}</p>
+                        <div>${techInfo}</div>
+                    </div>
+                    <div class="shrink-0 self-start sm:self-center">
+                        ${getStatusBadge(t.status)}
+                    </div>
+                `;
+                listEl.appendChild(item);
+            });
+        }
+
+        function switchTab(tab) {
+            const viewLogin = document.getElementById('view-login');
+            const viewUser = document.getElementById('view-user');
+            const viewAdmin = document.getElementById('view-admin');
+            const btnUser = document.getElementById('tab-user');
+            const btnAdmin = document.getElementById('tab-admin');
+
+            viewLogin.classList.add('hidden');
+            viewUser.classList.add('hidden');
+            viewAdmin.classList.add('hidden');
+
+            const user = getCurrentUser();
+            updateSessionUI();
+
+            // Login obrigatório para qualquer acesso
+            if (!user) {
+                viewLogin.classList.remove('hidden');
+                document.getElementById('login-error').classList.add('hidden');
+                return;
+            }
+
+            // Solicitante só pode acessar a aba "user"
+            if (user.perfil === 'Solicitante' && tab === 'admin') {
+                showToast('Acesso restrito à equipe de T.I. e Administradores.', 'warning');
+                tab = 'user';
+            }
+
+            currentTab = tab;
+
+            if (tab === 'user') {
+                btnUser.className = 'px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 bg-white text-[#1e40af] shadow';
+                btnAdmin.className = 'px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 text-blue-100 hover:text-white hover:bg-blue-800/50';
+                if (user.perfil === 'Solicitante') btnAdmin.classList.add('hidden');
+
+                viewUser.classList.remove('hidden');
+                prefillUserTicketForm();
+                renderMyTicketsList();
+            } else {
+                btnAdmin.className = 'px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 bg-white text-[#1e40af] shadow';
+                btnUser.className = 'px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 text-blue-100 hover:text-white hover:bg-blue-800/50';
+
+                viewAdmin.classList.remove('hidden');
+                renderAdminDashboard();
+            }
+        }
+
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const loginInput = document.getElementById('login-user').value.trim().toLowerCase();
+            const passInput = document.getElementById('login-pass').value;
+            const errBox = document.getElementById('login-error');
+            const errText = document.getElementById('login-error-text');
+
+            const users = loadUsers();
+            const found = users.find(u => u.usuario.toLowerCase() === loginInput && u.senha === passInput);
+
+            if (!found) {
+                errText.textContent = 'Usuário ou senha inválidos. Verifique e tente novamente.';
+                errBox.classList.remove('hidden');
+                document.getElementById('login-pass').value = '';
+                return;
+            }
+
+            if (!found.ativo) {
+                errText.textContent = 'Esta conta está inativa. Solicite ativação ao Administrador.';
+                errBox.classList.remove('hidden');
+                document.getElementById('login-pass').value = '';
+                return;
+            }
+
+            sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ id: found.id }));
+            document.getElementById('login-pass').value = '';
+            errBox.classList.add('hidden');
+            playAlertBeep(660, 0.12);
+            showToast(`Bem-vindo(a), ${found.nome}!`, 'success');
+
+            if (found.perfil === 'Solicitante') {
+                switchTab('user');
+            } else {
+                switchTab('admin');
+            }
+        });
+
+        function logoutSystem() {
+            sessionStorage.removeItem(AUTH_SESSION_KEY);
+            showToast('Sessão encerrada com segurança.', 'info');
+            switchTab('user');
+        }
+
+        /* =====================================================================
+           UPLOAD & COMPRESSÃO DE IMAGEM (BASE64)
+           ===================================================================== */
+        document.getElementById('foto-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                showToast('Por favor, selecione apenas arquivos de imagem.', 'error');
+                clearImageSelection();
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 900;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height = Math.round((height * MAX_WIDTH) / width);
+                        width = MAX_WIDTH;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    selectedImageBase64 = canvas.toDataURL('image/jpeg', 0.78);
+                    document.getElementById('foto-preview').src = selectedImageBase64;
+                    document.getElementById('foto-nome').textContent = file.name;
+                    document.getElementById('upload-placeholder').classList.add('hidden');
+                    document.getElementById('preview-wrapper').classList.remove('hidden');
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function clearImageSelection() {
+            selectedImageBase64 = null;
+            document.getElementById('foto-input').value = '';
+            document.getElementById('foto-preview').src = '';
+            document.getElementById('preview-wrapper').classList.add('hidden');
+            document.getElementById('upload-placeholder').classList.remove('hidden');
+        }
+
+        /* =====================================================================
+           ENVIO DE NOVO CHAMADO (SOMENTE USUÁRIO LOGADO)
+           ===================================================================== */
+        document.getElementById('ticket-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const currentUser = getCurrentUser();
+            if (!currentUser) {
+                showToast('Você precisa estar logado para abrir um chamado.', 'warning');
+                switchTab('user');
+                return;
+            }
+
+            const nome = currentUser.nome;
+            const departamento = document.getElementById('departamento').value || currentUser.departamento;
+            const tipo = document.getElementById('tipo').value;
+            const prioridade = document.getElementById('prioridade').value;
+            const descricao = document.getElementById('descricao').value.trim();
+
+            if (!descricao) return;
+
+            const apiUrl = getApiUrl();
+
+            if (apiUrl) {
+                try {
+                    const fd = new FormData();
+                    fd.append('usuario_id', currentUser.id);
+                    fd.append('nome', nome);
+                    fd.append('departamento', departamento);
+                    fd.append('depto', departamento);
+                    fd.append('tipo', tipo);
+                    fd.append('prioridade', prioridade);
+                    fd.append('descricao', descricao);
+                    fd.append('desc', descricao);
+                    const fileInput = document.getElementById('foto-input').files[0];
+                    if (fileInput) fd.append('foto', fileInput);
+
+                    const res = await fetch(`${apiUrl}?acao=criar`, { method: 'POST', body: fd });
+                    if (!res.ok) throw new Error('Erro API');
+                } catch (err) {
+                    showToast('Erro ao enviar para API PHP. Salvando localmente.', 'warning');
+                    saveTicketLocally({
+                        usuario_id: currentUser.id,
+                        nome,
+                        departamento,
+                        tipo,
+                        prioridade,
+                        descricao,
+                        imagem: selectedImageBase64
+                    });
+                }
+            } else {
+                saveTicketLocally({
+                    usuario_id: currentUser.id,
+                    nome,
+                    departamento,
+                    tipo,
+                    prioridade,
+                    descricao,
+                    imagem: selectedImageBase64
+                });
+            }
+
+            e.target.reset();
+            prefillUserTicketForm();
+            clearImageSelection();
+            renderMyTicketsList();
+            playAlertBeep(880, 0.25);
+            showToast(
+                prioridade === 'Critico'
+                    ? '🚨 Chamado CRÍTICO registrado! A equipe de T.I. foi alertada.'
+                    : '✅ Chamado aberto com sucesso! Acompanhe abaixo.',
+                prioridade === 'Critico' ? 'error' : 'success'
+            );
+        });
+
+        function saveTicketLocally({ usuario_id, nome, departamento, tipo, prioridade, descricao, imagem }) {
+            const tickets = loadLocalTickets();
+            const maxId = tickets.reduce((max, t) => Math.max(max, Number(t.id) || 1000), 1000);
+            const newTicket = {
+                id: maxId + 1,
+                usuario_id: usuario_id || null,
+                nome_solicitante: nome,
+                departamento: departamento,
+                tipo_problema: tipo,
+                prioridade: prioridade,
+                descricao: descricao,
+                status: 'Aberto',
+                tecnico_responsavel: null,
+                tecnico_id: null,
+                imagem: imagem || null,
+                data_abertura: new Date().toISOString()
+            };
+            tickets.unshift(newTicket);
+            saveLocalTickets(tickets);
+        }
+
+        /* =====================================================================
+           PAINEL T.I.: FILTROS, TABELA E GRÁFICOS (COM PERMISSÕES RBAC)
+           ===================================================================== */
+        function setPeriodFilter(period) {
+            currentPeriod = period;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.dataset.period === period) {
+                    btn.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1e40af] text-white shadow-sm transition';
+                } else {
+                    btn.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition';
+                }
+            });
+            renderAdminDashboard();
+        }
+
+        function filterTicketsByPeriod(tickets, period) {
+            const now = new Date();
+            return tickets.filter(t => {
+                const dt = new Date(t.data_abertura);
+                if (isNaN(dt.getTime())) return true;
+                if (period === 'dia') {
+                    return dt.toDateString() === now.toDateString();
+                }
+                if (period === 'semana') {
+                    return (now - dt) <= 7 * 24 * 60 * 60 * 1000;
+                }
+                if (period === 'mes') {
+                    return (now - dt) <= 30 * 24 * 60 * 60 * 1000;
+                }
+                return true;
+            });
+        }
+
+        async function renderAdminDashboard() {
+            const currentUser = getCurrentUser();
+            if (!currentUser || currentUser.perfil === 'Solicitante') return;
+
+            updateSessionUI();
+
+            const allTickets = await fetchAllTickets();
+            knownTicketCount = allTickets.length;
+
+            const periodFiltered = filterTicketsByPeriod(allTickets, currentPeriod);
+            const techFilter = document.getElementById('tech-filter').value;
+            const searchTerm = (document.getElementById('search-input').value || '').toLowerCase().trim();
+
+            const filtered = periodFiltered.filter(t => {
+                if (techFilter === 'meus') {
+                    const isMine = Number(t.tecnico_id) === Number(currentUser.id) ||
+                        (t.tecnico_responsavel || '').toLowerCase() === currentUser.nome.toLowerCase();
+                    if (!isMine) return false;
+                } else if (techFilter === 'sem_tecnico') {
+                    if (t.tecnico_responsavel) return false;
+                }
+
+                if (!searchTerm) return true;
+                return (
+                    String(t.id).includes(searchTerm) ||
+                    (t.nome_solicitante || '').toLowerCase().includes(searchTerm) ||
+                    (t.departamento || '').toLowerCase().includes(searchTerm) ||
+                    (t.tipo_problema || '').toLowerCase().includes(searchTerm) ||
+                    (t.descricao || '').toLowerCase().includes(searchTerm) ||
+                    (t.tecnico_responsavel || '').toLowerCase().includes(searchTerm)
+                );
+            });
+
+            // Ordena: Críticos em Aberto primeiro, depois por ID decrescente
+            filtered.sort((a, b) => {
+                const aCrit = (a.prioridade === 'Critico' && a.status === 'Aberto') ? 1 : 0;
+                const bCrit = (b.prioridade === 'Critico' && b.status === 'Aberto') ? 1 : 0;
+                if (bCrit !== aCrit) return bCrit - aCrit;
+                return Number(b.id) - Number(a.id);
+            });
+
+            // Atualiza KPIs
+            const statusCount = { 'Aberto': 0, 'Em Andamento': 0, 'Concluído': 0 };
+            const deptoCount = {};
+
+            filtered.forEach(t => {
+                const st = statusCount.hasOwnProperty(t.status) ? t.status : 'Aberto';
+                statusCount[st]++;
+                const dp = t.departamento || 'Outros';
+                deptoCount[dp] = (deptoCount[dp] || 0) + 1;
+            });
+
+            document.getElementById('kpi-total').textContent = filtered.length;
+            document.getElementById('kpi-aberto').textContent = statusCount['Aberto'];
+            document.getElementById('kpi-andamento').textContent = statusCount['Em Andamento'];
+            document.getElementById('kpi-concluido').textContent = statusCount['Concluído'];
+
+            // Permissões dinâmicas do usuário logado
+            const canAttend = hasPermission('atender_chamados');
+            const canEdit = hasPermission('editar_chamados');
+            const canDelete = hasPermission('excluir_chamados');
+
+            // Renderiza Tabela
+            const tbody = document.getElementById('tickets-tbody');
+            const emptyState = document.getElementById('empty-state');
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                emptyState.classList.remove('hidden');
+            } else {
+                emptyState.classList.add('hidden');
+                filtered.forEach(t => {
+                    const isCriticalOpen = (t.prioridade === 'Critico' && t.status === 'Aberto');
+                    const dateFormatted = formatDateBR(t.data_abertura);
+
+                    let imgSrc = null;
+                    if (t.imagem) {
+                        imgSrc = t.imagem.startsWith('data:') || t.imagem.startsWith('http')
+                            ? t.imagem
+                            : `uploads/${t.imagem}`;
+                    }
+
+                    const imgCell = imgSrc
+                        ? `<button type="button" onclick="openImageModal('${escapeAttr(imgSrc)}', 'Chamado #${t.id} — ${escapeAttr(t.nome_solicitante)}')" class="group relative w-12 h-12 rounded-xl overflow-hidden border border-slate-200 shadow-xs hover:ring-2 hover:ring-blue-500 transition">
+                               <img src="${imgSrc}" alt="Anexo" class="w-full h-full object-cover group-hover:scale-110 transition-transform">
+                           </button>`
+                        : `<span class="text-xs text-slate-300 italic">Sem anexo</span>`;
+
+                    const prioBadge = getPriorityBadge(t.prioridade);
+                    const statusBadge = getStatusBadge(t.status);
+                    const techLabel = t.tecnico_responsavel
+                        ? `<div class="mt-1.5 text-[11px] font-semibold text-[#1e40af] flex items-center gap-1"><i class="fa-solid fa-user-gear"></i> ${escapeHtml(t.tecnico_responsavel)}</div>`
+                        : `<div class="mt-1.5 text-[11px] text-slate-400 italic">Aguardando técnico</div>`;
+
+                    const actionsHtml = [];
+                    if (t.status === 'Aberto' && canAttend) {
+                        actionsHtml.push(`
+                            <button onclick="updateTicketStatus(${t.id}, 'Em Andamento')" title="Iniciar Atendimento" class="px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-semibold transition">
+                                <i class="fa-solid fa-play"></i> Atender
+                            </button>
+                        `);
+                    }
+                    if (t.status !== 'Concluído' && canAttend) {
+                        actionsHtml.push(`
+                            <button onclick="updateTicketStatus(${t.id}, 'Concluído')" title="Concluir Chamado" class="px-2.5 py-1.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-semibold transition">
+                                <i class="fa-solid fa-check"></i> Concluir
+                            </button>
+                        `);
+                    }
+                    if (canEdit) {
+                        actionsHtml.push(`
+                            <button onclick="openEditTicketModal(${t.id})" title="Editar / Renomear Chamado" class="p-1.5 rounded-lg text-slate-500 hover:text-[#1e40af] hover:bg-blue-50 transition">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                        `);
+                    }
+                    if (canDelete) {
+                        actionsHtml.push(`
+                            <button onclick="deleteTicket(${t.id})" title="Excluir Chamado" class="p-1.5 rounded-lg text-slate-400 hover:text-[#dc2626] hover:bg-red-50 transition">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        `);
+                    }
+
+                    const tr = document.createElement('tr');
+                    tr.className = isCriticalOpen ? 'row-critico transition-colors' : 'hover:bg-slate-50/80 transition-colors';
+
+                    tr.innerHTML = `
+                        <td class="py-3.5 px-4 align-top whitespace-nowrap">
+                            <span class="font-mono font-bold text-slate-800">#${t.id}</span>
+                            <div class="text-[11px] text-slate-400 mt-0.5">${dateFormatted}</div>
+                        </td>
+                        <td class="py-3.5 px-4 align-top no-print">${imgCell}</td>
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-semibold text-slate-800">${escapeHtml(t.nome_solicitante)}</div>
+                            <span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium">
+                                ${escapeHtml(t.departamento)}
+                            </span>
+                        </td>
+                        <td class="py-3.5 px-4 align-top max-w-md">
+                            <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                                ${prioBadge}
+                                <span class="text-xs font-bold text-slate-700">${escapeHtml(t.tipo_problema)}</span>
+                            </div>
+                            <p class="text-xs text-slate-600 leading-relaxed">${escapeHtml(t.descricao)}</p>
+                        </td>
+                        <td class="py-3.5 px-4 align-top whitespace-nowrap">
+                            ${statusBadge}
+                            ${techLabel}
+                        </td>
+                        <td class="py-3.5 px-4 align-top text-right whitespace-nowrap no-print">
+                            <div class="inline-flex items-center gap-1">
+                                ${actionsHtml.length ? actionsHtml.join('') : '<span class="text-[11px] text-slate-400 italic">Sem permissão de ação</span>'}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            renderCharts(statusCount, deptoCount);
+        }
+
+        function renderCharts(statusCount, deptoCount) {
+            const ctxStatus = document.getElementById('chart-status').getContext('2d');
+            const ctxDepto = document.getElementById('chart-depto').getContext('2d');
+
+            if (chartStatusInstance) chartStatusInstance.destroy();
+            if (chartDeptoInstance) chartDeptoInstance.destroy();
+
+            chartStatusInstance = new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Aberto', 'Em Andamento', 'Concluído'],
+                    datasets: [{
+                        data: [statusCount['Aberto'], statusCount['Em Andamento'], statusCount['Concluído']],
+                        backgroundColor: ['#dc2626', '#ca8a04', '#16a34a'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '64%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { family: 'Inter', size: 12 } } }
+                    }
+                }
+            });
+
+            const deptoLabels = Object.keys(deptoCount);
+            const deptoValues = Object.values(deptoCount);
+
+            chartDeptoInstance = new Chart(ctxDepto, {
+                type: 'bar',
+                data: {
+                    labels: deptoLabels.length ? deptoLabels : ['Sem dados'],
+                    datasets: [{
+                        label: 'Chamados',
+                        data: deptoValues.length ? deptoValues : [0],
+                        backgroundColor: '#1e40af',
+                        borderRadius: 8,
+                        maxBarThickness: 42
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Inter', size: 11 } }, grid: { color: '#f1f5f9' } },
+                        x: { ticks: { font: { family: 'Inter', size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        /* =====================================================================
+           AÇÕES ADMINISTRATIVAS (ATUALIZAR, EDITAR, EXCLUIR, IMPRIMIR, SIMULAR)
+           ===================================================================== */
+        async function updateTicketStatus(id, newStatus) {
+            if (!hasPermission('atender_chamados')) {
+                showToast('Você não tem permissão para atender ou concluir chamados.', 'error');
+                return;
+            }
+
+            const currentUser = getCurrentUser();
+            const techName = currentUser ? currentUser.nome : 'Equipe T.I.';
+            const techId = currentUser ? currentUser.id : null;
+
+            const apiUrl = getApiUrl();
+            if (apiUrl) {
+                try {
+                    await fetch(`${apiUrl}?acao=atualizar`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id,
+                            status: newStatus,
+                            tecnico_responsavel: techName,
+                            tecnico_id: techId
+                        })
+                    });
+                } catch (e) {
+                    showToast('Erro ao atualizar status na API.', 'error');
+                }
+            } else {
+                const tickets = loadLocalTickets();
+                const idx = tickets.findIndex(t => Number(t.id) === Number(id));
+                if (idx !== -1) {
+                    tickets[idx].status = newStatus;
+                    tickets[idx].tecnico_responsavel = techName;
+                    tickets[idx].tecnico_id = techId;
+                    if (newStatus === 'Concluído') {
+                        tickets[idx].data_conclusao = new Date().toISOString();
+                    }
+                    saveLocalTickets(tickets);
+                }
+            }
+
+            logAudit(`Chamado #${id} alterado para "${newStatus}" (Técnico: ${techName})`);
+            showToast(`Chamado #${id} marcado como "${newStatus}" por ${techName}.`, 'success');
+            renderAdminDashboard();
+        }
+
+        function openEditTicketModal(id) {
+            if (!hasPermission('editar_chamados')) {
+                showToast('Você não tem permissão para editar/renomear chamados.', 'error');
+                return;
+            }
+            const ticket = loadLocalTickets().find(t => Number(t.id) === Number(id));
+            if (!ticket) return;
+
+            document.getElementById('edit-ticket-id').value = ticket.id;
+            document.getElementById('edit-ticket-id-label').textContent = `#${ticket.id}`;
+            document.getElementById('edit-ticket-nome').value = ticket.nome_solicitante;
+            document.getElementById('edit-ticket-depto').value = ticket.departamento;
+            document.getElementById('edit-ticket-tipo').value = ticket.tipo_problema;
+            document.getElementById('edit-ticket-prio').value = ticket.prioridade;
+            document.getElementById('edit-ticket-desc').value = ticket.descricao;
+            document.getElementById('edit-ticket-modal').classList.remove('hidden');
+        }
+
+        function closeEditTicketModal() {
+            document.getElementById('edit-ticket-modal').classList.add('hidden');
+        }
+
+        document.getElementById('edit-ticket-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (!hasPermission('editar_chamados')) return;
+
+            const id = Number(document.getElementById('edit-ticket-id').value);
+            const payload = {
+                id,
+                nome_solicitante: document.getElementById('edit-ticket-nome').value.trim(),
+                departamento: document.getElementById('edit-ticket-depto').value,
+                tipo_problema: document.getElementById('edit-ticket-tipo').value.trim(),
+                prioridade: document.getElementById('edit-ticket-prio').value,
+                descricao: document.getElementById('edit-ticket-desc').value.trim()
+            };
+
+            const apiUrl = getApiUrl();
+            if (apiUrl) {
+                try {
+                    await fetch(`${apiUrl}?acao=editar`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (err) {
+                    showToast('Erro ao editar na API PHP.', 'warning');
+                }
+            }
+
+            const tickets = loadLocalTickets();
+            const idx = tickets.findIndex(t => Number(t.id) === id);
+            if (idx !== -1) {
+                tickets[idx] = { ...tickets[idx], ...payload };
+                saveLocalTickets(tickets);
+            }
+
+            logAudit(`Chamado #${id} editado/renomeado`);
+            closeEditTicketModal();
+            showToast(`Chamado #${id} atualizado com sucesso.`, 'success');
+            renderAdminDashboard();
+        });
+
+        async function deleteTicket(id) {
+            if (!hasPermission('excluir_chamados')) {
+                showToast('Você não tem permissão para excluir chamados.', 'error');
+                return;
+            }
+
+            const apiUrl = getApiUrl();
+            if (apiUrl) {
+                try {
+                    await fetch(`${apiUrl}?acao=excluir`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+                } catch (e) {
+                    showToast('Erro ao excluir na API.', 'error');
+                }
+            } else {
+                const tickets = loadLocalTickets().filter(t => Number(t.id) !== Number(id));
+                saveLocalTickets(tickets);
+            }
+
+            logAudit(`Chamado #${id} excluído`);
+            showToast(`Chamado #${id} removido do histórico.`, 'info');
+            renderAdminDashboard();
+        }
+
+        function printReport() {
+            const periodNames = { todos: 'Todos os Registros', dia: 'Hoje', semana: 'Últimos 7 Dias', mes: 'Últimos 30 Dias' };
+            document.getElementById('print-date').textContent = new Date().toLocaleString('pt-BR');
+            document.getElementById('print-filter').textContent = periodNames[currentPeriod] || 'Todos';
+            window.print();
+        }
+
+        function simulateIncomingTicket() {
+            const sampleNames = ['Fernanda Lima', 'Ricardo Alves', 'Beatriz Rocha', 'Thiago Martins'];
+            const sampleDeptos = ['Financeiro', 'Vendas', 'RH', 'Operacional'];
+            const sampleIssues = [
+                'Queda de acesso ao sistema de faturamento',
+                'Monitor secundário sem sinal de vídeo',
+                'Erro de certificado digital no navegador'
+            ];
+
+            const randName = sampleNames[Math.floor(Math.random() * sampleNames.length)];
+            const randDepto = sampleDeptos[Math.floor(Math.random() * sampleDeptos.length)];
+            const randIssue = sampleIssues[Math.floor(Math.random() * sampleIssues.length)];
+
+            saveTicketLocally({
+                usuario_id: null,
+                nome: randName,
+                departamento: randDepto,
+                tipo: 'Software / ERP / Office',
+                prioridade: 'Critico',
+                descricao: `${randIssue} (Simulação de alerta em tempo real).`,
+                imagem: createSampleErrorSvg('CRITICAL ALERT - Timeout no servidor de aplicação')
+            });
+
+            playAlertBeep(960, 0.35);
+            showToast(`🚨 NOVO CHAMADO CRÍTICO de ${randName} (${randDepto})!`, 'error');
+            renderAdminDashboard();
+        }
+
+        /* =====================================================================
+           GESTÃO DE USUÁRIOS, TÉCNICOS, ADMINISTRADORES & PERMISSÕES (RBAC)
+           ===================================================================== */
+        function openUsersModal() {
+            if (!canOpenUserManagement()) {
+                showToast('Você não possui permissão para gerenciar usuários.', 'error');
+                return;
+            }
+            resetUserForm();
+            renderUsersTable();
+
+            const auditSection = document.getElementById('audit-section');
+            if (hasPermission('ver_auditoria')) {
+                auditSection.classList.remove('hidden');
+                renderAuditLog();
+            } else {
+                auditSection.classList.add('hidden');
+            }
+
+            document.getElementById('users-modal').classList.remove('hidden');
+        }
+
+        function closeUsersModal() {
+            document.getElementById('users-modal').classList.add('hidden');
+        }
+
+        function onUserRoleSelectChange() {
+            const role = document.getElementById('crud-user-perfil').value;
+            const permBox = document.getElementById('permissions-box');
+            const checkboxes = permBox.querySelectorAll('input[type="checkbox"]');
+            const currentUser = getCurrentUser();
+            const canConfigPerms = currentUser?.isMaster || currentUser?.perfil === 'Admin' || hasPermission('gerenciar_permissoes');
+
+            if (role === 'Admin') {
+                checkboxes.forEach(cb => { cb.checked = true; cb.disabled = true; });
+                document.getElementById('perm-hint').textContent = 'Acesso total automático';
+            } else if (role === 'Tecnico') {
+                checkboxes.forEach(cb => { cb.disabled = !canConfigPerms; });
+                document.getElementById('perm-hint').textContent = canConfigPerms ? 'Definidas pelo Administrador' : 'Permissões padrão';
+            } else {
+                checkboxes.forEach(cb => { cb.checked = false; cb.disabled = true; });
+                document.getElementById('perm-hint').textContent = 'Apenas abertura de chamados';
+            }
+        }
+
+        function resetUserForm() {
+            document.getElementById('user-crud-form').reset();
+            document.getElementById('edit-user-id').value = '';
+            document.getElementById('user-form-title').textContent = 'Cadastrar Novo Usuário';
+            document.getElementById('btn-save-user-label').textContent = 'Salvar Usuário';
+            document.getElementById('btn-cancel-user-edit').classList.add('hidden');
+            document.getElementById('crud-user-ativo').checked = true;
+
+            // Permissões padrão ao criar Técnico
+            document.getElementById('perm-atender').checked = true;
+            document.getElementById('perm-editar').checked = false;
+            document.getElementById('perm-excluir').checked = false;
+            document.getElementById('perm-cad-usuario').checked = false;
+            document.getElementById('perm-cad-tecnico').checked = false;
+            document.getElementById('perm-cad-admin').checked = false;
+            document.getElementById('perm-gerenciar-perm').checked = false;
+            document.getElementById('perm-auditoria').checked = false;
+
+            // Filtra perfis permitidos para cadastro conforme permissão
+            const roleSelect = document.getElementById('crud-user-perfil');
+            const currentUser = getCurrentUser();
+            const isFullAdmin = currentUser?.isMaster || currentUser?.perfil === 'Admin';
+            [...roleSelect.options].forEach(opt => {
+                if (opt.value === 'Solicitante') opt.disabled = !(isFullAdmin || hasPermission('cadastrar_usuario'));
+                if (opt.value === 'Tecnico') opt.disabled = !(isFullAdmin || hasPermission('cadastrar_tecnico'));
+                if (opt.value === 'Admin') opt.disabled = !(isFullAdmin || hasPermission('cadastrar_admin'));
+            });
+            const firstEnabled = [...roleSelect.options].find(o => !o.disabled);
+            if (firstEnabled) roleSelect.value = firstEnabled.value;
+
+            onUserRoleSelectChange();
+        }
+
+        function editUserAccount(userId) {
+            if (!hasPermission('gerenciar_permissoes')) {
+                showToast('Você não tem permissão para renomear ou editar permissões de usuários.', 'error');
+                return;
+            }
+            const target = loadUsers().find(u => Number(u.id) === Number(userId));
+            if (!target) return;
+
+            document.getElementById('edit-user-id').value = target.id;
+            document.getElementById('user-form-title').textContent = `Editando / Renomeando: ${target.nome}`;
+            document.getElementById('btn-save-user-label').textContent = 'Atualizar Conta & Permissões';
+            document.getElementById('btn-cancel-user-edit').classList.remove('hidden');
+
+            document.getElementById('crud-user-nome').value = target.nome;
+            document.getElementById('crud-user-login').value = target.usuario;
+            document.getElementById('crud-user-senha').value = target.senha;
+            document.getElementById('crud-user-depto').value = target.departamento;
+            document.getElementById('crud-user-perfil').value = target.perfil;
+            document.getElementById('crud-user-ativo').checked = Boolean(target.ativo);
+
+            const perms = target.permissoes || {};
+            document.getElementById('perm-atender').checked = Boolean(perms.atender_chamados);
+            document.getElementById('perm-editar').checked = Boolean(perms.editar_chamados);
+            document.getElementById('perm-excluir').checked = Boolean(perms.excluir_chamados);
+            document.getElementById('perm-cad-usuario').checked = Boolean(perms.cadastrar_usuario);
+            document.getElementById('perm-cad-tecnico').checked = Boolean(perms.cadastrar_tecnico);
+            document.getElementById('perm-cad-admin').checked = Boolean(perms.cadastrar_admin);
+            document.getElementById('perm-gerenciar-perm').checked = Boolean(perms.gerenciar_permissoes);
+            document.getElementById('perm-auditoria').checked = Boolean(perms.ver_auditoria);
+
+            onUserRoleSelectChange();
+
+            // Protege o Administrador Master contra rebaixamento de perfil
+            if (target.isMaster) {
+                document.getElementById('crud-user-perfil').disabled = true;
+                document.getElementById('crud-user-ativo').disabled = true;
+            } else {
+                document.getElementById('crud-user-perfil').disabled = false;
+                document.getElementById('crud-user-ativo').disabled = false;
+            }
+        }
+
+        document.getElementById('user-crud-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const currentUser = getCurrentUser();
+            if (!currentUser) return;
+
+            const editId = document.getElementById('edit-user-id').value;
+            const nome = document.getElementById('crud-user-nome').value.trim();
+            const usuario = document.getElementById('crud-user-login').value.trim().toLowerCase();
+            const senha = document.getElementById('crud-user-senha').value;
+            const departamento = document.getElementById('crud-user-depto').value;
+            const perfil = document.getElementById('crud-user-perfil').value;
+            const ativo = document.getElementById('crud-user-ativo').checked;
+
+            const isFullAdmin = currentUser.isMaster || currentUser.perfil === 'Admin';
+
+            if (editId && !hasPermission('gerenciar_permissoes')) {
+                showToast('Sem permissão para editar/renomear contas.', 'error');
+                return;
+            }
+
+            if (!editId && !isFullAdmin) {
+                if (perfil === 'Solicitante' && !hasPermission('cadastrar_usuario')) {
+                    showToast('Sem permissão para cadastrar usuários solicitantes.', 'error');
+                    return;
+                }
+                if (perfil === 'Tecnico' && !hasPermission('cadastrar_tecnico')) {
+                    showToast('Sem permissão para cadastrar técnicos.', 'error');
+                    return;
+                }
+                if (perfil === 'Admin' && !hasPermission('cadastrar_admin')) {
+                    showToast('Sem permissão para cadastrar administradores.', 'error');
+                    return;
+                }
+            }
+
+            let permissoes = { ...NO_PERMISSIONS };
+            if (perfil === 'Admin') {
+                permissoes = { ...FULL_PERMISSIONS };
+            } else if (perfil === 'Tecnico') {
+                if (hasPermission('gerenciar_permissoes')) {
+                    permissoes = {
+                        atender_chamados: document.getElementById('perm-atender').checked,
+                        editar_chamados: document.getElementById('perm-editar').checked,
+                        excluir_chamados: document.getElementById('perm-excluir').checked,
+                        cadastrar_usuario: document.getElementById('perm-cad-usuario').checked,
+                        cadastrar_tecnico: document.getElementById('perm-cad-tecnico').checked,
+                        cadastrar_admin: document.getElementById('perm-cad-admin').checked,
+                        gerenciar_permissoes: document.getElementById('perm-gerenciar-perm').checked,
+                        ver_auditoria: document.getElementById('perm-auditoria').checked
+                    };
+                } else {
+                    permissoes = { ...DEFAULT_TECH_PERMISSIONS };
+                }
+            }
+
+            const users = loadUsers();
+            const duplicate = users.find(u => u.usuario.toLowerCase() === usuario && Number(u.id) !== Number(editId || 0));
+            if (duplicate) {
+                showToast(`O login "@${usuario}" já está em uso por outro usuário.`, 'error');
+                return;
+            }
+
+            if (editId) {
+                const idx = users.findIndex(u => Number(u.id) === Number(editId));
+                if (idx === -1) return;
+
+                const isMasterAccount = Boolean(users[idx].isMaster);
+                users[idx] = {
+                    ...users[idx],
+                    nome,
+                    usuario,
+                    senha,
+                    departamento,
+                    perfil: isMasterAccount ? 'Admin' : perfil,
+                    ativo: isMasterAccount ? true : ativo,
+                    permissoes: isMasterAccount ? { ...FULL_PERMISSIONS } : permissoes
+                };
+                saveUsers(users);
+                logAudit(`Conta "${nome}" (@${usuario}) renomeada/atualizada — Perfil: ${users[idx].perfil}`);
+                showToast(`Usuário "${nome}" atualizado com sucesso!`, 'success');
+            } else {
+                const maxId = users.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0);
+                users.push({
+                    id: maxId + 1,
+                    nome,
+                    usuario,
+                    senha,
+                    departamento,
+                    perfil,
+                    isMaster: false,
+                    ativo,
+                    permissoes
+                });
+                saveUsers(users);
+                logAudit(`Novo cadastro: "${nome}" (@${usuario}) — Perfil: ${perfil}`);
+                showToast(`Conta "${nome}" cadastrada com sucesso!`, 'success');
+            }
+
+            document.getElementById('crud-user-perfil').disabled = false;
+            document.getElementById('crud-user-ativo').disabled = false;
+
+            resetUserForm();
+            renderUsersTable();
+            if (hasPermission('ver_auditoria')) renderAuditLog();
+            updateSessionUI();
+        });
+
+        function deleteUserAccount(userId) {
+            if (!hasPermission('gerenciar_permissoes')) {
+                showToast('Sem permissão para excluir usuários.', 'error');
+                return;
+            }
+            const currentUser = getCurrentUser();
+            if (currentUser && Number(currentUser.id) === Number(userId)) {
+                showToast('Você não pode excluir sua própria conta em uso.', 'error');
+                return;
+            }
+
+            const users = loadUsers();
+            const target = users.find(u => Number(u.id) === Number(userId));
+            if (!target) return;
+
+            if (target.isMaster) {
+                showToast('O Administrador Master não pode ser excluído.', 'error');
+                return;
+            }
+
+            const updated = users.filter(u => Number(u.id) !== Number(userId));
+            saveUsers(updated);
+            logAudit(`Conta "${target.nome}" (@${target.usuario}) excluída`);
+            showToast(`Usuário "${target.nome}" excluído.`, 'info');
+            renderUsersTable();
+            if (hasPermission('ver_auditoria')) renderAuditLog();
+        }
+
+        function renderUsersTable() {
+            const users = loadUsers();
+            const canEditPerms = hasPermission('gerenciar_permissoes');
+            const tbody = document.getElementById('users-tbody');
+            document.getElementById('users-total-badge').textContent = users.length;
+            tbody.innerHTML = '';
+
+            const roleBadges = {
+                Admin: '<span class="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px] uppercase">Administrador</span>',
+                Tecnico: '<span class="px-2 py-0.5 rounded bg-blue-100 text-[#1e40af] font-bold text-[10px] uppercase">Técnico T.I.</span>',
+                Solicitante: '<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">Solicitante</span>'
+            };
+
+            users.forEach(u => {
+                const activePermsCount = Object.values(u.permissoes || {}).filter(Boolean).length;
+                const permSummary = u.perfil === 'Tecnico'
+                    ? `<div class="text-[10px] text-slate-500 mt-0.5">${activePermsCount} permissões ativas</div>`
+                    : (u.isMaster ? `<div class="text-[10px] text-purple-700 font-semibold mt-0.5">Master Protegido</div>` : '');
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50';
+                tr.innerHTML = `
+                    <td class="py-2.5 px-3">
+                        <div class="font-bold text-slate-800">${escapeHtml(u.nome)}</div>
+                        <div class="text-[11px] font-mono text-slate-400">@${escapeHtml(u.usuario)}</div>
+                    </td>
+                    <td class="py-2.5 px-3">
+                        ${roleBadges[u.perfil] || u.perfil}
+                        <div class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(u.departamento)}</div>
+                        ${permSummary}
+                    </td>
+                    <td class="py-2.5 px-3">
+                        ${u.ativo
+                            ? '<span class="text-[#16a34a] font-bold text-[11px]">● Ativo</span>'
+                            : '<span class="text-[#dc2626] font-bold text-[11px]">● Inativo</span>'}
+                    </td>
+                    <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                        ${canEditPerms ? `
+                            <button onclick="editUserAccount(${u.id})" title="Renomear / Editar Permissões" class="p-1.5 rounded-lg text-[#1e40af] hover:bg-blue-50">
+                                <i class="fa-solid fa-user-pen"></i>
+                            </button>
+                            ${!u.isMaster ? `
+                                <button onclick="deleteUserAccount(${u.id})" title="Excluir Conta" class="p-1.5 rounded-lg text-[#dc2626] hover:bg-red-50">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            ` : ''}
+                        ` : '<span class="text-[10px] text-slate-400 italic">Somente leitura</span>'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderAuditLog() {
+            const list = document.getElementById('audit-log-list');
+            try {
+                const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
+                const logs = raw ? JSON.parse(raw) : [];
+                if (!logs.length) {
+                    list.innerHTML = '<p class="text-slate-400 italic">Nenhuma alteração registrada ainda.</p>';
+                    return;
+                }
+                list.innerHTML = logs.map(item => `
+                    <div class="bg-white px-2.5 py-1.5 rounded border border-slate-200/70">
+                        <span class="text-slate-400">[${escapeHtml(item.timestamp)}]</span>
+                        <strong class="text-slate-700">${escapeHtml(item.actor)}:</strong>
+                        <span>${escapeHtml(item.action)}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '';
+            }
+        }
+
+        /* =====================================================================
+           POLLING DE MONITORAMENTO & ALERTAS SONOROS / TOASTS
+           ===================================================================== */
+        setInterval(async () => {
+            if (!isAuthenticated()) return;
+            const user = getCurrentUser();
+            if (!user || user.perfil === 'Solicitante') return;
+
+            const tickets = await fetchAllTickets();
+            if (knownTicketCount > 0 && tickets.length > knownTicketCount) {
+                const newest = tickets[0];
+                playAlertBeep(920, 0.35);
+                showToast(
+                    `🔔 Novo chamado #${newest.id} aberto por ${newest.nome_solicitante} (${newest.departamento})!`,
+                    newest.prioridade === 'Critico' ? 'error' : 'info'
+                );
+                if (currentTab === 'admin') {
+                    renderAdminDashboard();
+                }
+            }
+            knownTicketCount = tickets.length;
+        }, 10000);
+
+        function playAlertBeep(freq = 880, duration = 0.25) {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                const ctx = new AudioCtx();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (e) {
+                // Ignora bloqueio de autoplay se não houver interação prévia
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const colors = {
+                success: 'bg-[#16a34a] text-white border-green-700',
+                error: 'bg-[#dc2626] text-white border-red-700',
+                warning: 'bg-amber-500 text-slate-950 border-amber-600',
+                info: 'bg-slate-800 text-white border-slate-900'
+            };
+            const icons = {
+                success: 'fa-circle-check',
+                error: 'fa-triangle-exclamation',
+                warning: 'fa-circle-exclamation',
+                info: 'fa-circle-info'
+            };
+
+            const toast = document.createElement('div');
+            toast.className = `toast-enter pointer-events-auto p-3.5 rounded-xl shadow-xl border flex items-start gap-3 text-xs font-semibold ${colors[type] || colors.info}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icons[type] || icons.info} text-base mt-0.5"></i>
+                <div class="flex-1 leading-relaxed">${escapeHtml(message)}</div>
+                <button onclick="this.parentElement.remove()" class="opacity-75 hover:opacity-100">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 6000);
+        }
+
+        /* =====================================================================
+           MODAIS & UTILITÁRIOS
+           ===================================================================== */
+        function openImageModal(src, title) {
+            document.getElementById('modal-img-src').src = src;
+            document.getElementById('modal-img-title').textContent = title;
+            document.getElementById('image-modal').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('image-modal').classList.add('hidden');
+            document.getElementById('modal-img-src').src = '';
+        }
+
+        function openConfigModal() {
+            document.getElementById('api-url-input').value = getApiUrl();
+            document.getElementById('config-modal').classList.remove('hidden');
+        }
+
+        function closeConfigModal() {
+            document.getElementById('config-modal').classList.add('hidden');
+        }
+
+        function saveApiConfig() {
+            const url = document.getElementById('api-url-input').value.trim();
+            if (url) {
+                localStorage.setItem(API_CONFIG_KEY, url);
+                showToast('Endpoint da API PHP/MySQL configurado!', 'success');
+            } else {
+                localStorage.removeItem(API_CONFIG_KEY);
+                showToast('Modo Local (localStorage) ativado.', 'info');
+            }
+            updateConnectionBadge();
+            closeConfigModal();
+            if (currentTab === 'admin' && isAuthenticated()) {
+                renderAdminDashboard();
+            }
+        }
+
+        function resetDemoData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(getDefaultTickets()));
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(getDefaultUsers()));
+            showToast('Dados e contas de demonstração restaurados.', 'success');
+            closeConfigModal();
+            if (currentTab === 'admin' && isAuthenticated()) {
+                renderAdminDashboard();
+            } else if (isAuthenticated()) {
+                renderMyTicketsList();
+            }
+        }
+
+        function getPriorityBadge(prio) {
+            if (prio === 'Critico') {
+                return `<span class="px-2 py-0.5 rounded-md bg-[#dc2626] text-white text-[10px] font-bold uppercase tracking-wide">⚠️ Crítico</span>`;
+            }
+            if (prio === 'Alta') {
+                return `<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wide">Alta</span>`;
+            }
+            return `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wide">Normal</span>`;
+        }
+
+        function getStatusBadge(status) {
+            if (status === 'Concluído') {
+                return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold"><span class="w-1.5 h-1.5 rounded-full bg-[#16a34a]"></span>Concluído</span>`;
+            }
+            if (status === 'Em Andamento') {
+                return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold"><span class="w-1.5 h-1.5 rounded-full bg-[#ca8a04]"></span>Em Andamento</span>`;
+            }
+            return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-800 text-xs font-bold"><span class="w-1.5 h-1.5 rounded-full bg-[#dc2626]"></span>Aberto</span>`;
+        }
+
+        function formatDateBR(iso) {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return iso || '-';
+            return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' +
+                   d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function escapeAttr(str) {
+            return String(str || '').replace(/'/g, "\\'");
+        }
+
+        // Inicialização ao carregar a página
+        window.addEventListener('DOMContentLoaded', () => {
+            loadUsers();
+            loadLocalTickets();
+            updateConnectionBadge();
+            const user = getCurrentUser();
+            if (!user) {
+                switchTab('user');
+            } else if (user.perfil === 'Solicitante') {
+                switchTab('user');
+            } else {
+                switchTab('admin');
+            }
+        });
+    </script>
+</body>
+</html>
