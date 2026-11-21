@@ -1,0 +1,16 @@
+# Uploads de anexos de chamados
+uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# Arquivos temporários e de sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Configurações locais sensíveis
+config.local.php
+.env
